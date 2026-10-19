@@ -1,0 +1,10 @@
+LIBRARY nsQuickJs
+; Keep undecorated public exports identical on x86 and x64 (ASCII for link.exe).
+EXPORTS
+    Init=nsq_Init
+    Eval=nsq_Eval
+    EvalFile=nsq_EvalFile
+    LoadModule=nsq_LoadModule
+    Call=nsq_Call
+    SetFileAccess=nsq_SetFileAccess
+    Destroy=nsq_Destroy

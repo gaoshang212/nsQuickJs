@@ -1,0 +1,91 @@
+name: 构建与测试
+on:
+  push:
+    branches: ['**']
+    tags: ['v*']
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+
+jobs:
+  # 四组构建分别验证架构和配置；单组失败不取消其他组的诊断。
+  build:
+    runs-on: windows-2022
+    strategy:
+      fail-fast: false
+      matrix:
+        arch: [x86, x64]
+        configuration: [Debug, Release]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: 配置
+        run: cmake --preset ${{ matrix.arch }}
+      - name: 编译插件与测试
+        run: cmake --build build/${{ matrix.arch }} --config ${{ matrix.configuration }} --target nsQuickJs runtime_tests plugin_tests --parallel 4
+      - name: 运行时与 DLL ABI 测试
+        run: ctest --test-dir build/${{ matrix.arch }} -C ${{ matrix.configuration }} --output-on-failure
+      - name: 构建固定版本 NSIS
+        run: ./scripts/bootstrap-nsis.ps1 -Arch ${{ matrix.arch }}
+      - name: 真实安装器测试
+        run: ./scripts/test-installer.ps1 -Arch ${{ matrix.arch }} -Configuration ${{ matrix.configuration }}
+      - name: 整理发布包
+        if: matrix.configuration == 'Release'
+        run: cmake --install build/${{ matrix.arch }} --config Release --prefix dist/nsQuickJs
+      - name: 编译并运行发布包示例
+        if: matrix.configuration == 'Release'
+        shell: pwsh
+        run: |
+          # 将矩阵架构转换为 NSIS 目标，并选择同架构的缓存编译器。
+          $arch = '${{ matrix.arch }}'
+          $target = if ($arch -eq 'x64') { 'amd64-unicode' } else { 'x86-unicode' }
+          $compiler = Join-Path $pwd ".cache/nsis-toolchain-$arch/Bin/makensis.exe"
+          & $compiler /V2 "/DDEMO_TARGET=$target" dist/nsQuickJs/Examples/demo.nsi
+          if ($LASTEXITCODE) { throw '示例编译失败' }
+          # 静默运行发布包内的真实示例，30 秒超时后终止并使 CI 失败。
+          $example = Join-Path $pwd "dist/nsQuickJs/Examples/demo-$target.exe"
+          $process = Start-Process $example -ArgumentList /S -PassThru -WindowStyle Hidden
+          if (!$process.WaitForExit(30000)) { $process.Kill(); throw '示例运行超时' }
+          if ($process.ExitCode) { throw '示例运行失败' }
+      - uses: actions/upload-artifact@v4
+        if: matrix.configuration == 'Release'
+        with:
+          name: nsQuickJs-${{ matrix.arch }}
+          path: dist/nsQuickJs/
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: diagnostics-${{ matrix.arch }}-${{ matrix.configuration }}
+          path: |
+            build/${{ matrix.arch }}/Testing/Temporary/
+            build/${{ matrix.arch }}/integration-*/installer.exe.failure.txt
+            .cache/nsis/config.log
+
+  # 只有 v* 标签且完整构建矩阵通过时，合并双架构产物并发布。
+  release:
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: windows-2022
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: nsQuickJs-*
+          merge-multiple: true
+          path: package
+      - name: 打包并发布
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          # 使用环境变量传递标签，归档内保留两种架构的插件目录。
+          $archive = "nsQuickJs-$env:RELEASE_TAG.zip"
+          Compress-Archive -Path package/* -DestinationPath $archive
+          gh release create $env:RELEASE_TAG $archive --verify-tag --title "nsQuickJs $env:RELEASE_TAG" --generate-notes
+          if ($LASTEXITCODE) { throw '发布失败' }

@@ -1,0 +1,9 @@
+* text=auto
+*.cpp text eol=lf
+*.h text eol=lf
+*.cmake text eol=lf
+*.md text eol=lf
+*.nsi text eol=lf
+*.nsh text eol=lf
+*.ps1 text eol=crlf
+tests/fixtures/invalid-utf8.js -text
