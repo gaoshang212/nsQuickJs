@@ -1,9 +1,9 @@
 # 接口
 
-所有导出函数采用 NSIS 插件 ABI，使用 Unicode 字符串。直接调用时必须保留 `/NOUNLOAD`。
+All exported functions use the NSIS plugin ABI with Unicode strings. The plugin registers an NSIS callback via `RegisterPluginCallback` to remain loaded across calls and clean up the JavaScript context when NSIS unloads it.
 
 ```nsis
-nsQuickJs::Call /NOUNLOAD "main" "calculate" "[20,22]"
+nsQuickJs::Call "main" "calculate" "[20,22]"
 Pop $0 ; 状态
 Pop $1 ; JSON 结果或错误文本
 ```
@@ -47,7 +47,7 @@ Pop $1 ; JSON 结果或错误文本
 ; 必须先检查 $0：0 表示成功，$1 为 JSON 结果；失败时 $1 为错误说明。
 ```
 
-宏参数为 `PATH STATUS RESULT`，状态变量和结果变量必须不同。也可直接调用 `nsQuickJs::EvalFile /NOUNLOAD "calculate.js"`，随后依次弹出状态、结果。
+宏参数为 `PATH STATUS RESULT`，状态变量和结果变量必须不同。也可直接调用 `nsQuickJs::EvalFile "calculate.js"`，随后依次弹出状态、结果。
 
 - **文件准备**：插件只读取已有文件，不负责从安装器释放脚本。先用 NSIS 的 `SetOutPath`、`File` 准备文件，并将其所在根目录传给 `Init`。
 - **路径**：相对路径基于 `rootDir`，也接受根目录内的绝对路径；解析 `..` 和文件系统链接后的路径不得越出根目录。路径指向普通文件，不自动补扩展名。
