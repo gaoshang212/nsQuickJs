@@ -1,37 +1,53 @@
-# 首版验证记录
+# Initial Validation Record
 
-验证日期：2026-10-16。环境：Windows 10.0.26300、VS 2022 / MSVC 19.44、CMake 3.31.6、NSIS 3.13。
+Validation date: 2026-10-16. Environment: Windows 10.0.26300, VS 2022 / MSVC 19.44, CMake 3.31.6, and NSIS 3.13.
 
-| 构建 | 运行时检查 | DLL ABI 检查 | 真实安装器 |
+| Build | Runtime checks | DLL ABI checks | Real installer |
 | --- | --- | --- | --- |
-| x86 Debug | 83 项通过 | 18 项通过 | 通过 |
-| x86 Release | 83 项通过 | 18 项通过 | 通过 |
-| x64 Debug | 83 项通过 | 18 项通过 | 通过 |
-| x64 Release | 83 项通过 | 18 项通过 | 通过 |
+| x86 Debug | 83 passed | 18 passed | Passed |
+| x86 Release | 83 passed | 18 passed | Passed |
+| x64 Debug | 83 passed | 18 passed | Passed |
+| x64 Release | 83 passed | 18 passed | Passed |
 
-- 全新构建目录下载并校验 QuickJS-NG 源码包，x64 Release 构建及测试通过。
-- 全新依赖缓存从固定 NSIS/zlib 提交构建 x64 工具链，真实安装器测试通过。
-- 双架构发布包示例编译、静默执行成功。
-- PE 检查确认安装器与 DLL 位数匹配；两个 Release DLL 的导入依赖均只有 `KERNEL32.dll`。
-- 工作流 YAML 已解析验证；尚未在远端 GitHub Actions 执行。
+- A fresh build directory downloaded and verified the QuickJS-NG source archive; the x64 Release build and tests passed.
+- A fresh dependency cache built the x64 toolchain from pinned NSIS and zlib commits; real installer tests passed.
+- Release package examples for both architectures compiled and ran successfully in silent mode.
+- PE checks confirmed matching installer and DLL architectures. Both Release DLLs imported only `KERNEL32.dll`.
+- The workflow YAML was parsed and validated, but had not been executed on remote GitHub Actions runners.
 
-未在独立 Windows 10 虚拟机或未安装开发工具的系统中实测。静态依赖检查不能替代这些系统上的运行验证。
+Testing did not include a separate Windows 10 virtual machine or a system without development tools installed. Static dependency checks do not replace runtime validation on those systems.
 
-## 文件访问与权限开关验证
+## File access and permission validation
 
-验证日期：2026-10-19，使用上述本地工具链。
+Validation date: 2026-10-19, using the local toolchain listed above.
 
-| 构建 | 原有运行时检查 | 新增文件访问检查 | DLL ABI 检查 | 真实安装器 |
+| Build | Existing runtime checks | New file access checks | DLL ABI checks | Real installer |
 | --- | --- | --- | --- | --- |
-| x86 Debug | 83 项通过 | 77 项通过 | 23 项通过 | 通过 |
-| x86 Release | 83 项通过 | 77 项通过 | 23 项通过 | 通过 |
-| x64 Debug | 83 项通过 | 77 项通过 | 23 项通过 | 通过 |
-| x64 Release | 83 项通过 | 77 项通过 | 23 项通过 | 通过 |
+| x86 Debug | 83 passed | 77 passed | 23 passed | Passed |
+| x86 Release | 83 passed | 77 passed | 23 passed | Passed |
+| x64 Debug | 83 passed | 77 passed | 23 passed | Passed |
+| x64 Release | 83 passed | 77 passed | 23 passed | Passed |
 
-- 文件测试使用独立临时目录，覆盖默认禁用、配置授权、动态开关、缓存引用撤销及重新初始化。
-- 覆盖中文路径、UTF-8/BOM/空字符、覆盖/追加/删除、目录和属性查询、大小限制、参数及编码错误。
-- 验证路径越界、根目录删除保护、设备名和备用数据流；本机符号链接、悬空链接和硬链接写入保护用例均执行通过。
-- 真实 NSIS 安装器验证新增导出和宏、中文文件读写及权限撤销；PE 架构匹配。
-- 双架构发布包的更新 demo 均编译并静默执行通过，包含 `EvalFile` 文件读写示例。
+- File tests used isolated temporary directories to cover disabled-by-default access, configuration-based authorization, dynamic permissions, revocation of saved function references, and reinitialization.
+- Coverage included Chinese paths, UTF-8, BOMs, embedded null characters, overwrite/append/delete operations, directory and metadata queries, size limits, argument errors, and encoding errors.
+- Tests verified path boundaries, root-directory deletion protection, device names, and alternate data streams. Symbolic link, dangling link, and hard-link write protection cases all ran and passed on the local machine.
+- Real NSIS installers verified the new export and macro, file I/O with Chinese text, and permission revocation. PE architectures matched.
+- Updated release package demos for both architectures compiled and ran successfully in silent mode, including the `EvalFile` file I/O example.
 
-本次未重新执行远端 GitHub Actions，也未进行并发恶意替换目录树的隔离验证；文件接口面向可信脚本。
+This validation did not rerun remote GitHub Actions or test isolation against malicious concurrent replacement of the directory tree. The file API is intended for trusted scripts.
+
+## Release preparation validation
+
+Validation date: 2026-10-20, using the local toolchain listed above.
+
+- The readiness audit rebuilt x86/x64 Debug and Release; all four configurations passed the `runtime` and `plugin` CTest targets and real installer tests.
+- After the packaging changes, both Release configurations were rebuilt and their native and real installer tests passed again.
+- Both architectures were installed into a fresh staging directory. The packaged x86 and amd64 examples compiled and ran successfully in silent mode.
+- The packaging script ran successfully in PowerShell 7 and Windows PowerShell 5.1. Tests confirmed rejection of a mismatched tag, stale project files, a missing DLL, a DLL of the wrong architecture, and an output directory inside the package.
+- The generated ZIP included both DLLs, current macros without `/NOUNLOAD`, both READMEs, dependency licenses, the changelog, and the security policy. The SHA-256 file matched the archive.
+- Workflow and issue-template YAML parsed successfully. Local documentation links and `git diff --check` passed.
+
+The GitHub repository had not yet been created, so hosted Actions, Release publication,
+and private vulnerability reporting settings remain unverified. A clean Windows
+system without development tools also remains untested. The release checklist in
+`docs/build.md` requires those checks before publishing.

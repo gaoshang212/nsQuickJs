@@ -1,22 +1,24 @@
-# 构建与发布
+# Building and Releasing
 
-## 工具链
+## Toolchain
 
-安装 Visual Studio 2022 的 C++ 桌面开发组件、Windows SDK、CMake 3.24+、Git。
-在开发者 PowerShell 中执行 README 命令。若 CMake 未加入 PATH，可使用 Visual Studio 安装目录下 `Common7/IDE/CommonExtensions/Microsoft/CMake/CMake/bin` 的程序。
+Install Visual Studio 2022 with the Desktop development with C++ workload, Windows SDK, CMake 3.24+, and Git.
+Run the commands in the [English README](../README.md#build-and-test) from a Developer PowerShell. A [Chinese README](../README.zh-CN.md#构建和测试) is also available. If CMake is not on `PATH`, use the executables in `Common7/IDE/CommonExtensions/Microsoft/CMake/CMake/bin` under the Visual Studio installation directory.
 
-预设固定使用 VS 2022，`x86` 对应 `Win32`，`x64` 对应 `x64`。通过 `.def` 导出未修饰函数名；静态链接 `/MT`，Debug 使用 `/MTd`。最终用户不需要安装 QuickJS 或 VC 运行库。
+The presets use VS 2022: `x86` selects `Win32`, and `x64` selects `x64`. The `.def` file exports undecorated function names. The plugin links the C runtime statically with `/MT`, or `/MTd` for Debug builds. End users do not need to install QuickJS or the Visual C++ runtime.
+
+After configuring the x64 preset, build and test Debug with:
 
 ```powershell
 cmake --build build/x64 --config Debug --target nsQuickJs runtime_tests plugin_tests
 ctest --test-dir build/x64 -C Debug --output-on-failure
 ```
 
-已有 QuickJS-NG 源码时可通过 `-DFETCHCONTENT_SOURCE_DIR_QUICKJS=绝对路径` 离线配置，须自行保证对应锁定提交。
+If you already have the QuickJS-NG sources, configure offline with `-DFETCHCONTENT_SOURCE_DIR_QUICKJS=<absolute-path>`. You are responsible for ensuring that the source matches the pinned commit.
 
-## NSIS 双架构工具链
+## NSIS toolchains for both architectures
 
-`scripts/bootstrap-nsis.ps1` 在 `.cache` 内获取固定版本的 NSIS、zlib、SCons，从相同 NSIS 源码构建两种架构的编译器和 zlib 安装器模板。不修改系统 NSIS，不要求管理员权限。
+`scripts/bootstrap-nsis.ps1` fetches pinned versions of NSIS, zlib, and SCons into `.cache`. It builds compilers and zlib installer stubs for both architectures from the same NSIS sources. It does not modify the system NSIS installation or require administrator privileges.
 
 ```powershell
 ./scripts/bootstrap-nsis.ps1 -Arch all
@@ -24,28 +26,49 @@ ctest --test-dir build/x64 -C Debug --output-on-failure
 ./scripts/test-installer.ps1 -Arch x64 -Configuration Release
 ```
 
-脚本可传入 `-CMake` 和 `-Python` 指定可执行文件。依赖缓存允许重用，不应并行运行同一工作区内的工具链构建脚本。外部完整 NSIS 工具链可通过测试脚本的 `-MakeNSIS` 参数指定。
+The bootstrap script accepts `-CMake` and `-Python` to select executables. Dependency caches can be reused, but do not run toolchain builds concurrently in the same workspace. To use an external complete NSIS toolchain, pass its compiler through the test script's `-MakeNSIS` argument.
 
-这里构建的是测试所需的最小 NSIS 工具链，只包含 zlib 模板和头文件，不是完整 NSIS 发行包。
+The generated toolchain is the minimal version needed for testing, with zlib stubs and headers. It is not a complete NSIS distribution.
 
-## 测试层次
+## Test layers
 
-1. 运行时测试：JS、模块、JSON、异常、超时、内存及生命周期；`tests/file_tests.cpp` 在独立临时目录验证文件读写、授权撤销、路径边界和链接限制。符号链接测试在系统不允许创建链接时报告跳过。
-2. DLL ABI 测试：动态加载真实插件，验证导出、参数顺序、栈平衡、字符串边界及退出回调。
-3. 安装器测试：编译、运行真实 NSIS 安装器，检查 PE 架构、宏调用、跨调用状态和错误恢复。
+1. Runtime tests cover JavaScript, modules, JSON, exceptions, timeouts, memory, and lifetimes. `tests/file_tests.cpp` uses isolated temporary directories to test file operations, permission revocation, path boundaries, and link restrictions. Symbolic link tests report a skip when the system does not permit link creation.
+2. DLL ABI tests load the actual plugin and verify exports, argument order, stack balance, string boundaries, and the unload callback.
+3. Installer tests compile and run real NSIS installers, checking PE architecture, macro calls, shared state across calls, and error recovery.
 
-测试安装器只在自己的临时目录释放脚本，不修改注册表或系统目录。失败时在安装器旁写入 `.failure.txt`，返回非零退出码。外部进程超时为 30 秒。
+The test installer extracts scripts only into its own temporary directory. It does not modify the registry or system directories. On failure, it writes a `.failure.txt` file beside the installer and returns a nonzero exit code. The external process timeout is 30 seconds.
 
-## 打包
+## Packaging
 
-将两个 Release 构建安装到相同前缀：
+Build both Release configurations from the intended source revision first. Use a fresh package directory so files removed from the source do not survive from a previous install. Install both architectures into the same prefix, then run the package validator:
 
 ```powershell
-cmake --install build/x86 --config Release --prefix dist/nsQuickJs
-cmake --install build/x64 --config Release --prefix dist/nsQuickJs
-Compress-Archive -Path dist/nsQuickJs/* -DestinationPath dist/nsQuickJs-0.1.0.zip -Force
+# Use a new directory for each packaging attempt.
+$package = Join-Path 'dist' ('package-' + [guid]::NewGuid().ToString('N'))
+cmake --install build/x86 --config Release --prefix $package
+cmake --install build/x64 --config Release --prefix $package
+./scripts/package-release.ps1 -PackageDirectory $package
 ```
 
-在发布包的 `Examples` 目录编译 `demo.nsi`，使用 `/DDEMO_TARGET=amd64-unicode` 可生成 x64 示例。
+The script reads the version from `CMakeLists.txt` and emits `dist/nsQuickJs-v0.1.0.zip`, `dist/nsQuickJs-v0.1.0.zip.sha256`, and a `.notes.md` file for the release body. It requires a matching nonempty version section in `CHANGELOG.md`, matching project files in the package, both DLL architectures, and dependency licenses. An explicit `-Tag` must exactly match `v<project-version>`; prerelease tags are not currently supported. `-OutputDirectory` can select another output directory outside the package tree.
 
-GitHub Actions 在 Windows runner 上运行两种架构、两种配置的测试。`v*` 标签仅在完整测试矩阵成功后打包 Release 产物并创建 GitHub Release。普通提交和 PR 只上传构建产物。
+The package includes both READMEs, the changelog, and the security policy. Compile `demo.nsi` from the package's `Examples` directory; use `/DDEMO_TARGET=amd64-unicode` to build the x64 example. Test both examples in silent mode before distributing a local package.
+
+File checks detect stale documentation, macros, and example sources. PE checks verify DLL architecture; they do not prove which revision built the DLL. Always rebuild before packaging. GitHub Actions builds the DLLs and packages them in the same workflow run.
+
+## Publishing a release
+
+1. Confirm that `origin` points to [gaoshang212/nsQuickJs](https://github.com/gaoshang212/nsQuickJs). Enable private vulnerability reporting under the repository's security settings; `SECURITY.md` documents a fallback if it is unavailable.
+2. Set the intended version in `CMakeLists.txt` and add its `## [X.Y.Z]` section to `CHANGELOG.md`. Keep both READMEs synchronized.
+3. Commit all intended changes, including new files. Confirm `git status --short` is clean. Push `main` and wait for all four GitHub Actions build jobs to pass. Local tests do not validate the hosted runner environment.
+4. Download the CI artifacts and verify the examples on a clean Windows system without development tools. Record the exact Windows build, NSIS version, architectures, and results in `docs/validation.md`. Push any resulting changes and wait for CI again before tagging.
+5. Create the version tag on the validated commit and push it:
+
+   ```powershell
+   git tag -a v0.1.0 -m "Release v0.1.0"
+   git push origin v0.1.0
+   ```
+
+6. The tag workflow reruns the full matrix, combines the Release artifacts, validates their version and content, and publishes the ZIP and checksum with the corresponding changelog section as release notes. It creates a public-facing release, not a draft. Inspect the uploaded assets and verify the downloaded checksum.
+
+Ordinary commits and pull requests upload build artifacts without publishing a release. A `v*` tag triggers the release path, but packaging rejects tags that do not match the project version. Use a new version for changes to an already published release rather than moving the tag.

@@ -1,0 +1,24 @@
+# 收集安装器场景和期望行为，避免缺少上下文的功能请求。
+name: Feature request
+description: Suggest an improvement to nsQuickJs.
+title: "[Feature]: "
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Installer use case
+      description: What are you trying to do, and what currently prevents it?
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed behavior
+      description: Describe the expected API or behavior, with an example if possible.
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: Describe any workaround or alternative approach.

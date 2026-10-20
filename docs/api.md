@@ -1,147 +1,148 @@
-# 接口
+# API Reference
 
 All exported functions use the NSIS plugin ABI with Unicode strings. The plugin registers an NSIS callback via `RegisterPluginCallback` to remain loaded across calls and clean up the JavaScript context when NSIS unloads it.
 
 ```nsis
 nsQuickJs::Call "main" "calculate" "[20,22]"
-Pop $0 ; 状态
-Pop $1 ; JSON 结果或错误文本
+Pop $0 ; Status code.
+Pop $1 ; JSON result or error message.
 ```
 
-`.nsh` 宏名为 `NsQuickJs_接口名`，最后两个参数依次为状态变量、结果变量，两者必须不同。
+The `.nsh` macros use the naming pattern `NsQuickJs_<Method>`. Their final two arguments are the status variable and result variable, in that order. These must be different variables.
 
-## 方法
+## Methods
 
-| 方法 | 输入 | 成功结果 |
+| Method | Input | Successful result |
 | --- | --- | --- |
-| `Init` | 配置 JSON 对象 | 空字符串 |
-| `Eval` | 普通 JS 脚本字符串 | 脚本完成值的 JSON |
-| `EvalFile` | UTF-8 文件路径 | 普通脚本完成值的 JSON |
-| `LoadModule` | 非空别名、模块路径 | 空字符串 |
-| `Call` | 别名、函数名、JSON 参数数组 | 函数结果的 JSON |
-| `SetFileAccess` | 字符串 `true` 或 `false` | 空字符串 |
-| `Destroy` | 无 | 空字符串 |
+| `Init` | JSON configuration object | Empty string |
+| `Eval` | Ordinary JavaScript source string | Script completion value as JSON |
+| `EvalFile` | Path to a UTF-8 script file | Script completion value as JSON |
+| `LoadModule` | Nonempty alias, module path | Empty string |
+| `Call` | Alias, function name, JSON argument array | Function result as JSON |
+| `SetFileAccess` | String `true` or `false` | Empty string |
+| `Destroy` | None | Empty string |
 
-`Call` 的空别名表示从全局对象查找函数。使用顶层 `function` 或显式设置 `globalThis.fn`；顶层 `let` 和 `const` 不会成为全局对象属性。不解析 `obj.method` 形式的函数名，函数以 `undefined` 为 `this` 调用。最多支持 1024 个实参。
+An empty alias in `Call` looks up the function on the global object. Define it with a top-level `function` declaration or explicitly assign `globalThis.fn`; top-level `let` and `const` bindings are not global object properties. Names such as `obj.method` are not resolved as property paths. Functions are called with `undefined` as `this`. Calls accept at most 1024 arguments.
 
-## 初始化配置
+## Initialization
 
 ```json
 {"rootDir":"C:/scripts","timeoutMs":5000,"memoryLimitMiB":64}
 ```
 
-- `rootDir` 必填，必须是存在的绝对目录。
-- `timeoutMs` 为 1–600000 的整数，默认 5000 毫秒。
-- `memoryLimitMiB` 为 1–1024 的整数，默认 64 MiB，限制引擎的分配请求总量，不等于进程总内存。
-- `allowFileAccess` 为 JSON 布尔值，默认 `false`；只有 `true` 才允许脚本调用 `fs`。字符串 `"true"` 等非布尔值返回 `E_ARGUMENT`。
-- JS 原生栈限额固定为 256 KiB。单个脚本文件最大 16 MiB。
-- 未识别的配置字段忽略。错误 JSON 返回 `E_JS`，字段错误返回 `E_ARGUMENT` 或 `E_PATH`。
+- `rootDir` is required and must be an existing absolute directory path.
+- `timeoutMs` is an integer from 1 to 600000, with a default of 5000 milliseconds.
+- `memoryLimitMiB` is an integer from 1 to 1024, with a default of 64 MiB. It limits allocations requested by the engine, not total process memory.
+- `allowFileAccess` is a JSON boolean and defaults to `false`. Only `true` permits scripts to call `fs`. Non-boolean values, including the string `"true"`, return `E_ARGUMENT`.
+- The JavaScript native stack limit is fixed at 256 KiB. Each script file is limited to 16 MiB.
+- Unknown configuration fields are ignored. Invalid JSON returns `E_JS`; invalid field values return `E_ARGUMENT` or `E_PATH`.
 
-一个进程仅维护一个上下文，必须在创建线程使用。重复初始化返回 `E_STATE`。显式销毁或 NSIS 卸载回调清理上下文；销毁可重复执行。
+Each process has one context, which must be used on the thread that created it. Repeated initialization returns `E_STATE`. Explicit destruction or the NSIS unload callback cleans up the context. Repeated destruction is allowed.
 
-## 执行普通脚本文件：EvalFile
+## Execute script files: EvalFile
 
 ```nsis
-; 前提：Init 已成功，calculate.js 已释放到 rootDir 内。
+; Prerequisites: Init succeeded and calculate.js has been extracted inside rootDir.
 !insertmacro NsQuickJs_EvalFile 'calculate.js' $0 $1
-; 必须先检查 $0：0 表示成功，$1 为 JSON 结果；失败时 $1 为错误说明。
+; Check $0 first: 0 means success and $1 contains JSON; on failure, $1 contains an error message.
 ```
 
-宏参数为 `PATH STATUS RESULT`，状态变量和结果变量必须不同。也可直接调用 `nsQuickJs::EvalFile "calculate.js"`，随后依次弹出状态、结果。
+The macro arguments are `PATH STATUS RESULT`; the status and result variables must differ. You can also call `nsQuickJs::EvalFile "calculate.js"` directly, then pop the status and result in that order.
 
-- **文件准备**：插件只读取已有文件，不负责从安装器释放脚本。先用 NSIS 的 `SetOutPath`、`File` 准备文件，并将其所在根目录传给 `Init`。
-- **路径**：相对路径基于 `rootDir`，也接受根目录内的绝对路径；解析 `..` 和文件系统链接后的路径不得越出根目录。路径指向普通文件，不自动补扩展名。
-- **编码及大小**：文件内容须为 UTF-8，允许开头带 BOM；单个文件最大 16 MiB。只有路径经过 NSIS 参数栈，源码不受栈字符串长度限制，但返回结果仍受该限制。
-- **执行及返回值**：按普通全局脚本执行，返回脚本完成值的 JSON。可将预期结果作为最后一个表达式，例如 `add(20, 22);` 返回 `42`；对象表达式应加括号，如 `({ total: 42 });`。不要使用顶层 `return`。完成值为 `undefined` 时返回空串；完成值为 Promise 时按任务队列规则等待。
-- **状态复用**：与 `Eval`、`Call` 共用上下文，每次调用都重新读取并执行文件，不使用模块缓存。脚本中的全局函数可通过 `NsQuickJs_Call '' 'add' '[20,22]' $0 $1` 调用。重复执行含顶层 `let`/`const` 声明的脚本可能产生重复声明错误。
-- **模块区别**：文件扩展名不会将 `EvalFile` 切换为模块模式；静态 `import`、`export` 和顶层 `await` 应使用 `LoadModule`。模块导出函数随后通过别名调用。
+- **File preparation:** The plugin reads existing files; it does not extract scripts from the installer. Prepare them with NSIS `SetOutPath` and `File`, then pass their root directory to `Init`.
+- **Paths:** Relative paths are resolved against `rootDir`. Absolute paths inside that directory are also accepted. After resolving `..` and filesystem links, the path must remain inside the root directory. It must identify a regular file; extensions are not added automatically.
+- **Encoding and size:** Files must contain UTF-8 text, optionally starting with a BOM, and must not exceed 16 MiB. Only the path passes through the NSIS argument stack, so the source is not subject to the stack string limit. The returned result is still subject to that limit.
+- **Execution and results:** Files execute as ordinary global scripts and return their completion value as JSON. Use a final expression for the desired result: for example, `add(20, 22);` returns `42`. Wrap object expressions in parentheses, as in `({ total: 42 });`. Do not use top-level `return`. An `undefined` completion value produces an empty string; a Promise completion value is awaited according to the job queue rules.
+- **Shared state:** Execution shares the context used by `Eval` and `Call`. Each invocation reads and executes the file again, without module caching. Global functions defined by the script can be called with `NsQuickJs_Call '' 'add' '[20,22]' $0 $1`. Repeating a script with top-level `let` or `const` declarations may cause redeclaration errors.
+- **Module distinction:** The file extension does not switch `EvalFile` into module mode. Use `LoadModule` for static `import`, `export`, and top-level `await`, then call exported functions through the module alias.
 
-常见失败包括文件不存在或不可读时的 `E_IO`、路径越界时的 `E_PATH`、非法 UTF-8 的 `E_ENCODING`、脚本异常的 `E_JS`，以及结果过长的 `E_RESULT_TOO_LONG`。执行和序列化同样受超时、内存限制；传输结果失败不会回滚已执行的脚本。带脚本内容和错误检查的示例见 [README](../README.md#执行-js-文件nsquickjs_evalfile)。
+Common failures include `E_IO` for missing or unreadable files, `E_PATH` for paths outside the root, `E_ENCODING` for invalid UTF-8, `E_JS` for script exceptions, and `E_RESULT_TOO_LONG` for oversized results. Execution and serialization are subject to the configured time and memory limits. A result transmission failure does not roll back script execution. See the [README example](../README.md#execute-a-script-file-nsquickjs_evalfile) for script contents and error handling.
 
-## JS 文件访问：fs
+## JavaScript file access: fs
 
-`fs` 是全局对象，在 `Eval`、`EvalFile` 和 ES 模块中均可使用，不需要 `import`。它不是 Node.js 的 `fs`，所有方法同步执行，参数严格要求字符串，不进行隐式类型转换。方法和全局 `fs` 绑定不可覆盖；访问权限保存在宿主内部，不由 JS 属性控制。
+`fs` is a global object available in `Eval`, `EvalFile`, and ES modules without an `import`. It is not Node.js's `fs`. All methods execute synchronously and require string arguments without implicit conversion. The methods and global `fs` binding cannot be overwritten. Permissions are stored in the host, not controlled by JavaScript properties.
 
-### 由 NSIS 授权
+### Host authorization
 
-默认禁止全部 `fs` 操作，包括存在性和属性查询。可在 `Init` 中设置 `"allowFileAccess":true`，或在上下文有效时调用：
+All `fs` operations are disabled by default, including existence and metadata queries. Set `"allowFileAccess":true` in `Init`, or use the following calls while the context is valid:
 
 ```nsis
-; 开启或撤销当前上下文的全部 fs 权限；$0 为状态，$1 为错误说明或空串。
+; Grant or revoke all fs permissions for the current context.
+; $0 receives the status; $1 receives an error message or an empty string.
 !insertmacro NsQuickJs_SetFileAccess 'true' $0 $1
-; 在这里检查 $0 并执行需要文件访问的脚本。
+; Check $0 here, then run scripts that need file access.
 !insertmacro NsQuickJs_SetFileAccess 'false' $0 $1
 ```
 
-`SetFileAccess` 只接受小写 `true`/`false`，否则返回 `E_ARGUMENT`；未初始化或失效时返回 `E_STATE`。每次文件操作都重新检查权限，因此缓存函数引用、模块和 Promise 回调也不能绕过撤销。JS 没有开启权限的方法。销毁后权限清除，下次初始化重新读取配置。此开关不影响宿主 `EvalFile`、`LoadModule` 或 JS 模块导入；它们仍遵循原有脚本加载边界。
+`SetFileAccess` accepts only lowercase `true` or `false`; other values return `E_ARGUMENT`. An uninitialized or invalid context returns `E_STATE`. Permissions are checked on every file operation, so saved function references, modules, and Promise callbacks cannot bypass revocation. JavaScript has no method to enable access. Destruction clears the permission, and the next initialization reads its own configuration. This switch does not affect host calls to `EvalFile` or `LoadModule`, or JavaScript module imports; their existing script-loading boundaries still apply.
 
-### 方法与返回值
+### File methods and return values
 
-| JS 方法 | 行为及成功返回值 |
+| JavaScript method | Behavior and successful return value |
 | --- | --- |
-| `fs.readText(path)` | 读取 UTF-8 文本，返回字符串；保留 BOM、换行及嵌入空字符 |
-| `fs.writeText(path, text)` | 新建或覆盖文件，不添加 BOM、不转换换行；返回 `undefined` |
-| `fs.appendText(path, text)` | 追加文本，文件不存在则新建；返回 `undefined` |
-| `fs.exists(path)` | 文件或目录存在返回 `true`，不存在返回 `false`；无权访问等错误仍抛异常 |
-| `fs.mkdir(path)` | 创建单层目录；目录已存在时成功，父目录必须存在；返回 `undefined` |
-| `fs.readDir(path)` | 返回直属条目的文件名数组（包含文件和目录），按 UTF-8 字节序排序，不递归 |
-| `fs.remove(path)` | 删除普通文件或空目录；成功返回 `true`，不存在返回 `false`；不能删除根目录或递归删除 |
-| `fs.stat(path)` | 返回 `{ isFile, isDirectory, size }`，`size` 为字节数；目录的 `size` 为 0 |
+| `fs.readText(path)` | Reads UTF-8 text and returns a string, preserving the BOM, line endings, and embedded null characters |
+| `fs.writeText(path, text)` | Creates or overwrites a file without adding a BOM or changing line endings; returns `undefined` |
+| `fs.appendText(path, text)` | Appends text, creating the file if it does not exist; returns `undefined` |
+| `fs.exists(path)` | Returns `true` for an existing file or directory and `false` if absent; errors such as access denial still throw |
+| `fs.mkdir(path)` | Creates one directory level; succeeds if the directory already exists; the parent must exist; returns `undefined` |
+| `fs.readDir(path)` | Returns the names of immediate entries, including files and directories, sorted by UTF-8 byte order; does not recurse |
+| `fs.remove(path)` | Deletes a regular file or empty directory; returns `true` if removed and `false` if absent; cannot delete the root or recurse |
+| `fs.stat(path)` | Returns `{ isFile, isDirectory, size }`; `size` is in bytes and is 0 for directories |
 
-相对路径始终基于 `rootDir`，不是当前模块目录；根目录内的绝对路径也可使用。拒绝越界、空路径、空字符、驱动器相对路径、Windows 设备名、备用数据流及尾随点/空格。文件访问不允许经过符号链接、目录联接或其他重解析点；写入和追加还会拒绝已有硬链接文件。目录枚举可返回链接名称，但对这些链接进行访问会被拒绝。
+Relative paths always start at `rootDir`, not the current module's directory. Absolute paths inside the root are also accepted. Paths outside the root, empty paths, null characters, drive-relative paths, Windows device names, alternate data streams, and trailing dots or spaces are rejected. File operations cannot traverse symbolic links, directory junctions, or other reparse points. Writes and appends also reject existing hard-linked files. Directory enumeration may return link names, but accessing those links is rejected.
 
-读取文件、单次写入内容以及追加后的总长度均不得超过 16 MiB；目录枚举最多 4096 项。写入前须由调用者创建父目录。文本必须为有效 UTF-8，不提供二进制接口；若读取含 BOM 的 JSON，可先使用 `.replace(/^\uFEFF/, '')` 再 `JSON.parse`。
+Files read, individual write payloads, and total file lengths after appending must not exceed 16 MiB. Directory enumeration is limited to 4096 entries. Callers must create parent directories before writing. Text must be valid UTF-8; no binary interface is provided. When reading JSON with a BOM, use `.replace(/^\uFEFF/, '')` before `JSON.parse` if needed.
 
 ```js
-// 宿主已授权后写入配置；这里仅操作 rootDir 内的文件。
+// After host authorization, write configuration inside rootDir.
 fs.writeText('settings.json', JSON.stringify({ language: 'zh-CN' }));
 try {
-    // 读取后解析 JSON，文件接口本身只处理文本。
+    // Parse JSON after reading; the file API itself handles text only.
     JSON.parse(fs.readText('settings.json'));
 } catch (error) {
-    // 文件错误通过 code 区分，权限关闭时为 E_PERMISSION。
+    // File errors have a code; disabled access produces E_PERMISSION.
     ({ code: error.code, message: error.message });
 }
 ```
 
-### 错误和副作用
+### File errors and side effects
 
-文件接口抛出带 `code` 和 `message` 的 JS `Error`：`E_PERMISSION` 表示未授权，`E_ARGUMENT` 表示参数类型或数量错误，`E_PATH` 表示路径被拒绝，`E_ENCODING` 表示文本编码无效，`E_IO` 表示读写、目录或大小限制错误。可在 JS 中捕获并继续执行；未捕获时，NSIS 收到外层 `E_JS`，而不是直接收到 `E_PERMISSION` 等内部错误码。运行时超时和内存耗尽仍优先按 `E_TIMEOUT`/`E_MEMORY` 处理，并使上下文失效。
+The file API throws JavaScript `Error` objects with `code` and `message` properties. `E_PERMISSION` means access is disabled, `E_ARGUMENT` indicates an incorrect argument type or count, `E_PATH` indicates a rejected path, `E_ENCODING` indicates invalid text encoding, and `E_IO` covers file operations, directory operations, and size limits. Scripts can catch these errors and continue. If an error is uncaught, NSIS receives the outer `E_JS` status rather than the internal code such as `E_PERMISSION`. Runtime timeout and memory exhaustion still take precedence as `E_TIMEOUT` or `E_MEMORY` and invalidate the context.
 
-操作不是事务：写入失败、后续 JS 异常、超时或返回值过长都不回滚文件副作用；磁盘写入失败可能留下部分内容。同步系统 I/O 不能被 JS 中断，返回引擎后才检查截止时间。宿主缓冲区不计入 QuickJS 的内存配额。此接口面向可信脚本，路径检查不是系统级沙箱，也不防御其他进程在操作期间替换目录树；不要将会被并发改动链接的目录授权给脚本。
+Operations are not transactional. Write failures, later JavaScript exceptions, timeouts, and oversized return values do not roll back filesystem changes. A failed disk write may leave partial content. JavaScript cannot interrupt synchronous system I/O; the deadline is checked after I/O returns to the engine. Host buffers do not count toward the QuickJS memory quota. This API is intended for trusted scripts. Path checks are not an operating-system sandbox and do not protect against another process replacing the directory tree during an operation. Do not authorize directories whose links may be changed concurrently.
 
-## 模块和异步
+## Modules and asynchronous execution
 
-入口允许根目录内的绝对路径或相对路径。依赖使用 `./`、`../`，必须包含扩展名；路径解析后不得越出根目录。UTF-8 文件允许 BOM。无扩展名自动补全、包名、URL 和原生模块均不支持。
+Entry paths may be absolute or relative within the root directory. Dependencies must use `./` or `../` paths with explicit extensions, and resolved paths must remain inside the root. UTF-8 files may include a BOM. Automatic extension completion, package names, URLs, and native modules are not supported.
 
-模块按规范化路径缓存，同一路径可注册多个别名，但同一别名不可覆盖。模块状态持续到上下文销毁；文件修改不会热重载。循环依赖遵循 ECMAScript 规则，不能在初始化前读取尚未初始化的绑定。
+Modules are cached by canonical path. The same path may have multiple aliases, but an existing alias cannot be overwritten. Module state lasts until the context is destroyed; changes to files are not hot-reloaded. Circular dependencies follow ECMAScript rules: bindings cannot be read before initialization.
 
-函数返回 Promise 时等待其完成，同时处理任务队列；模块支持顶层 `await`。返回值或模块初始化仍待定且没有可执行任务时返回 `E_PENDING`。检测未处理的 Promise 拒绝。未被返回、没有后续任务的待定 Promise 不作为操作完成条件。
+When a function returns a Promise, the plugin processes the job queue and waits for it to settle. Modules support top-level `await`. If a return value or module initialization remains pending with no runnable jobs, the call returns `E_PENDING`. Unhandled Promise rejections are detected. A pending Promise that is not returned and has no further jobs does not determine whether the operation is complete.
 
-不提供外部事件循环、定时器和 I/O Promise。执行期限覆盖 JS 执行、任务队列及 JSON 序列化，不能打断 Windows 文件系统调用。
+There is no external event loop, timer API, or asynchronous I/O Promise API. Execution deadlines cover JavaScript execution, the job queue, and JSON serialization, but cannot interrupt Windows filesystem calls.
 
-## 返回值及错误
+## Return values and errors
 
-结果按内置 `JSON.stringify` 语义序列化，不受脚本替换全局 `JSON.stringify` 影响。顶层 `undefined` 返回空字符串；JS 空字符串返回 `""`。非有限数按 JSON 规则返回 `null`；循环引用、BigInt 和顶层函数等不可序列化值返回错误。
+Results follow the built-in `JSON.stringify` semantics, regardless of whether a script replaces the global `JSON.stringify` function. Top-level `undefined` produces an empty string; a JavaScript empty string produces `""`. Non-finite numbers produce `null` according to JSON rules. Unsupported values such as circular references, BigInt, and top-level functions return an error.
 
-输入容量由 NSIS 限制，插件无法恢复调用前已被 NSIS 截断的参数。输出按调用方实际容量检查，不写入截断的 JSON。错误信息允许截短，结尾标记 `...[截短]`。
+NSIS limits input capacity. The plugin cannot recover arguments that NSIS truncated before the call. Output is checked against the caller's actual capacity; truncated JSON is never written. Error messages may be shortened and end with the literal marker `...[截短]` (meaning "truncated").
 
-| 状态 | 含义 |
+| Status | Meaning |
 | --- | --- |
-| `0` | 成功 |
-| `E_ARGUMENT` | 参数、别名或函数不正确 |
-| `E_STATE` | 未初始化、重复初始化、上下文失效、并发或线程不匹配 |
-| `E_JS` | 语法、运行时、模块导入错误或 Promise 拒绝 |
-| `E_PATH` | 入口路径无效或越界 |
-| `E_IO` | 入口文件不可读或超过大小限制 |
-| `E_ENCODING` | UTF-8/UTF-16 编码无效 |
-| `E_SERIALIZE` | 返回值无法转换为 JSON |
-| `E_RESULT_TOO_LONG` | 输出超过 NSIS 字符串容量 |
-| `E_TIMEOUT` | JS 执行超时 |
-| `E_MEMORY` | 引擎内存上限或分配失败 |
-| `E_PENDING` | 结果或模块初始化的 Promise 无法完成 |
-| `E_INTERNAL` | 插件内部错误 |
+| `0` | Success |
+| `E_ARGUMENT` | Invalid arguments, alias, or function |
+| `E_STATE` | Uninitialized, already initialized, or invalid context; concurrent call or wrong thread |
+| `E_JS` | Syntax, runtime, module import, or Promise rejection error |
+| `E_PATH` | Invalid entry path or path outside the root |
+| `E_IO` | Unreadable entry file or file size limit exceeded |
+| `E_ENCODING` | Invalid UTF-8 or UTF-16 encoding |
+| `E_SERIALIZE` | Result cannot be converted to JSON |
+| `E_RESULT_TOO_LONG` | Output exceeds NSIS string capacity |
+| `E_TIMEOUT` | JavaScript execution timed out |
+| `E_MEMORY` | Engine allocation limit reached or allocation failed |
+| `E_PENDING` | Result or module initialization Promise cannot settle |
+| `E_INTERNAL` | Internal plugin error |
 
-模块依赖加载错误通过 JS 异常报告，因此外层状态为 `E_JS`。普通异常保留已有状态，不回滚副作用；若异常遗留任务队列则上下文失效，避免任务影响下一次调用。
+Module dependency loading errors are reported through JavaScript exceptions, so the outer status is `E_JS`. Ordinary exceptions preserve existing state and do not roll back side effects. If an exception leaves jobs in the queue, the context is invalidated to prevent those jobs from affecting the next call.
 
-`E_TIMEOUT`、`E_MEMORY`、`E_PENDING` 和运行时内部错误后，执行 `Destroy` 再 `Init`。`E_RESULT_TOO_LONG` 仅表示传输失败，脚本已执行且副作用保留。普通 `E_JS` 包含消息和可用的调用栈；抛出的非 Error 对象不保证提供调用栈。
+After `E_TIMEOUT`, `E_MEMORY`, `E_PENDING`, or an internal runtime error, call `Destroy` and then `Init`. `E_RESULT_TOO_LONG` indicates only a transmission failure; the script has already executed and its side effects remain. Ordinary `E_JS` errors include the message and any available stack trace. Thrown values that are not Error objects do not necessarily provide a stack trace.

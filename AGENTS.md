@@ -30,9 +30,11 @@ These prepare both NSIS toolchains and run real installers. Do not run toolchain
 
 ## Coding Style & Naming Conventions
 
-Follow `.editorconfig`: four spaces by default; two for JSON, YAML, CMake, and NSIS files. Use UTF-8 and LF, except PowerShell files use UTF-8 BOM and CRLF. C++ uses C++17, `nsq`, PascalCase types, camelCase methods, and trailing underscores for members. Preserve `NsQuickJs_*` macro naming. Keep explanations in Chinese and comments short, following `CONTRIBUTING.md`. No formatter or linter is configured.
+Follow `.editorconfig`: four spaces by default; two for JSON, YAML, CMake, and NSIS files. Use UTF-8 and LF, except PowerShell files use UTF-8 BOM and CRLF. C++ uses C++17, `nsq`, PascalCase types, camelCase methods, and trailing underscores for members. Preserve `NsQuickJs_*` macro naming. Keep implementation comments concise and in Chinese, following `CONTRIBUTING.md`. No formatter or linter is configured.
 
 ## Comment Requirements
+
+`README.md` is the default English entry point; `README.zh-CN.md` is its Chinese counterpart. Keep both versions synchronized and retain reciprocal language links. Write `CONTRIBUTING.md` and all documents under `docs/` in English. Documentation snippet comments follow the document language; implementation comments remain Chinese. Preserve literal runtime messages when documenting them. Update cross-document anchors when renaming headings. Include both READMEs in release packages.
 
 All new or modified project-owned code must include concise Chinese comments. Document every class/struct, function/method (including private methods, constructors, destructors, operators, callbacks, and nontrivial lambdas), member, and global/static variable. Explain purpose, parameter/return meaning, ownership, units, and error behavior where relevant. Use `///` for C++ declarations and `//` for implementation details; use the appropriate comment syntax in scripts and NSIS macros. Keep `.def` comments ASCII for MSVC linker compatibility. Declaration comments may serve definitions, but explain non-obvious implementation constraints locally. Update comments whenever behavior changes; avoid merely restating statements. Apply these rules to tests, examples, and build helpers too. Preserve upstream third-party sources, generated files, and byte-sensitive fixtures; document fixture intent in adjacent documentation when necessary.
 

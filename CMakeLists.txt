@@ -64,6 +64,7 @@ install(TARGETS nsQuickJs RUNTIME DESTINATION "Plugins/${NSQ_TARGET}")
 install(DIRECTORY include/ DESTINATION Include)
 install(DIRECTORY examples/ DESTINATION Examples)
 install(DIRECTORY docs/ DESTINATION docs)
-install(FILES README.md LICENSE THIRD_PARTY_NOTICES.md DESTINATION .)
+# 分发双语说明、版本记录和反馈政策，确保包内文档链接可用。
+install(FILES README.md README.zh-CN.md CHANGELOG.md SECURITY.md LICENSE THIRD_PARTY_NOTICES.md DESTINATION .)
 install(FILES "${quickjs_SOURCE_DIR}/LICENSE" DESTINATION licenses RENAME QuickJS-NG.txt)
 install(FILES third_party/nsis/COPYING DESTINATION licenses RENAME NSIS.txt)

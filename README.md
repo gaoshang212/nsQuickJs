@@ -1,18 +1,35 @@
 # nsQuickJs
 
-在 NSIS 安装器中执行 JavaScript 的开源插件，基于 QuickJS-NG，采用 MIT 许可证。
+**English** | [简体中文](README.zh-CN.md)
 
-- 执行 JS 字符串和 UTF-8 脚本文件。
-- 由 NSIS 授权后，通过 `fs` 读写 UTF-8 文件、管理目录；默认关闭。
-- 保留上下文，复用变量、函数和模块状态。
-- 加载 ES Modules，通过 JSON 调用导出函数。
-- 支持可在 JS 任务队列内完成的 Promise 和顶层 `await`。
-- 提供超时、内存限制和可检查的错误码。
-- 同时构建 `x86-unicode` 和 `amd64-unicode` 插件。
+An open-source NSIS plugin for running JavaScript, powered by QuickJS-NG and released under the MIT license.
 
-## 使用
+- Execute JavaScript strings and UTF-8 script files.
+- Read and write UTF-8 files and manage directories through `fs` when authorized by NSIS; file access is disabled by default.
+- Preserve the execution context to reuse variables, functions, and module state.
+- Load ES modules and call exported functions with JSON arguments.
+- Support Promises that can settle through the JavaScript job queue, including top-level `await` in modules.
+- Enforce execution time and memory limits, with explicit error codes.
+- Build plugins for both `x86-unicode` and `amd64-unicode` installers.
 
-发布包中的 `Plugins`、`Include` 和 `Examples` 应保持相对位置。普通 NSIS Unicode 安装器使用 x86 插件；原生 x64 安装器使用 amd64 插件。选择取决于安装器进程，而不是操作系统或被安装软件的位数。
+## Download
+
+[Releases](https://github.com/gaoshang212/nsQuickJs/releases)
+
+## Compatibility
+
+| Component | Scope and validation |
+| --- | --- |
+| Installer ABI | Unicode NSIS, `x86-unicode` and `amd64-unicode`; ANSI and native ARM64 plugins are not provided |
+| NSIS | Tested with toolchains built from pinned NSIS 3.13 sources; older versions are not validated |
+| Windows | Locally tested on build 10.0.26300; a minimum supported Windows version has not been established |
+| Runtime dependencies | Release DLLs statically link QuickJS-NG and the C runtime; users do not need to install them separately |
+
+The local tests cover both architectures in Debug and Release. A separate clean Windows system without development tools has not yet been tested. See the [validation record](docs/validation.md) for results and remaining checks.
+
+## Usage
+
+Keep the release package's `Plugins`, `Include`, and `Examples` directories in their original relative locations. Standard NSIS Unicode installers use the x86 plugin; native x64 installers use the amd64 plugin. Choose the plugin architecture based on the installer process, not the operating system or the application being installed.
 
 ```nsis
 Unicode true
@@ -20,90 +37,91 @@ Target x86-unicode
 !define NSQUICKJS_PLUGIN_DIR "path\to\nsQuickJs\Plugins"
 !include "path\to\nsQuickJs\Include\nsQuickJs.nsh"
 
-; 在 Section 中调用。JSON 路径使用正斜杠或转义反斜杠。
+; Place these calls inside a Section. Use forward slashes or escaped backslashes in JSON paths.
 !insertmacro NsQuickJs_Init '{"rootDir":"C:/my-installer/scripts"}' $0 $1
-; 每次检查 $0；只有 "0" 表示成功。
+; Check $0 after every call; only "0" indicates success.
 !insertmacro NsQuickJs_Eval '1 + 2' $0 $1
-; $1 为 JSON 文本 3。
+; $1 contains the JSON text 3.
 !insertmacro NsQuickJs_LoadModule 'main' 'main.mjs' $0 $1
 !insertmacro NsQuickJs_Call 'main' 'calculate' '[20,22]' $0 $1
 !insertmacro NsQuickJs_Destroy $0 $1
 ```
 
-完整的错误检查与脚本释放示例见 [examples/demo.nsi](examples/demo.nsi)。模块示例：
+See [examples/demo.nsi](examples/demo.nsi) for script extraction and error handling. A module can export a function like this:
 
 ```js
+// Return a Promise whose result is serialized to JSON for NSIS.
 export async function calculate(a, b) {
     return { total: await Promise.resolve(a + b) };
 }
 ```
 
-改用 x64 时设置 `Target amd64-unicode`，并使用包含 amd64 安装器模板的 NSIS。项目提供从固定 NSIS 源码构建测试工具链的脚本。
+For x64, set `Target amd64-unicode` and use an NSIS toolchain that includes amd64 installer stubs. This project provides a script to build test toolchains from pinned NSIS sources.
 
-### 执行 JS 文件：NsQuickJs_EvalFile
+### Execute a script file: NsQuickJs_EvalFile
 
-脚本较长时，可保存为 UTF-8 文件，通过 `NsQuickJs_EvalFile` 执行。例如将以下内容保存为 `calculate.js`：
+For longer scripts, save the code in a UTF-8 file and execute it with `NsQuickJs_EvalFile`. For example, save the following as `calculate.js`:
 
 ```js
-// 定义全局函数，后续也可通过 NsQuickJs_Call 的空别名调用。
+// Define a global function that can also be called with an empty NsQuickJs_Call alias.
 function add(a, b) {
     return a + b;
 }
-// 最后一个表达式作为脚本结果，返回给 NSIS 的 JSON 文本为 42。
+// The final expression supplies the script result; NSIS receives the JSON text 42.
 add(20, 22);
 ```
 
-运行时文件必须已存在于 `rootDir` 内。使用前面示例的配置时，文件位置为 `C:/my-installer/scripts/calculate.js`；若随安装器分发，先通过 NSIS 的 `SetOutPath`、`File` 将脚本释放到目标目录，再以该目录初始化 `rootDir`。
+The file must already exist inside `rootDir` at runtime. With the configuration above, its location is `C:/my-installer/scripts/calculate.js`. To bundle the script with an installer, extract it with NSIS `SetOutPath` and `File`, then initialize `rootDir` with that directory.
 
-在 `Init` 成功后、`Destroy` 之前，将以下代码放入 `Section`：
+Place these calls inside a `Section`, after a successful `Init` and before `Destroy`:
 
 ```nsis
-; 路径相对于 rootDir，不是当前工作目录；$0/$1 分别接收状态和结果。
+; The path is relative to rootDir, not the working directory. $0/$1 receive status and result.
 !insertmacro NsQuickJs_EvalFile 'calculate.js' $0 $1
 StrCmp $0 '0' eval_file_ok
-  DetailPrint "脚本执行失败：$0 / $1"
+  DetailPrint "Script execution failed: $0 / $1"
   SetErrorLevel 1
   Abort
 eval_file_ok:
-  DetailPrint "文件执行结果：$1" ; 此例输出 42。
+  DetailPrint "Script file result: $1" ; Prints 42 in this example.
 ```
 
-文件允许 UTF-8 BOM，最大 16 MiB。每次调用都会重新读取并执行文件，变量和函数保留在共享上下文中。普通脚本使用 `EvalFile`；包含静态 `import`、`export` 或顶层 `await` 的 ES 模块使用 `NsQuickJs_LoadModule`。完整参数、路径和返回值规则见 [EvalFile 接口说明](docs/api.md#执行普通脚本文件evalfile)。
+Script files may include a UTF-8 BOM and must not exceed 16 MiB. Each call reads and executes the file again; variables and functions remain in the shared context. Use `EvalFile` for ordinary scripts and `NsQuickJs_LoadModule` for ES modules containing static `import`, `export`, or top-level `await`. See the [EvalFile reference](docs/api.md#execute-script-files-evalfile) for parameter, path, and return-value rules.
 
-### JS 文件访问与权限开关
+### File access and permissions
 
-JS 全局对象 `fs` 提供同步文件操作，默认禁止调用。初始化时可用 JSON 布尔值开启：
+The global JavaScript object `fs` provides synchronous file operations, which are disabled by default. Enable them during initialization with a JSON boolean:
 
 ```nsis
-; rootDir 必须已存在；此配置允许当前上下文访问该目录内的文件。
+; rootDir must exist. This configuration permits file access within that directory.
 !insertmacro NsQuickJs_Init '{"rootDir":"C:/my-installer/scripts","allowFileAccess":true}' $0 $1
-; 检查 $0 为 0 后再执行脚本。
+; Check that $0 is 0 before executing scripts.
 ```
 
-也可在初始化成功后，由 NSIS 动态开启或关闭：
+After initialization, NSIS can also enable or disable access dynamically:
 
 ```nsis
-; ENABLED 只接受 true 或 false；每次调用后检查 $0。
+; ENABLED accepts only true or false. Check $0 after every call.
 !insertmacro NsQuickJs_SetFileAccess 'true' $0 $1
 !insertmacro NsQuickJs_EvalFile 'files.js' $0 $1
-; 撤销权限后，即使 JS 保存了 fs 方法引用也不能继续访问文件。
+; Revoking access also blocks calls through previously saved fs method references.
 !insertmacro NsQuickJs_SetFileAccess 'false' $0 $1
 ```
 
-`files.js` 中可以写入并读取 JSON：
+For example, `files.js` can write and read JSON:
 
 ```js
-// 路径相对于 rootDir；JSON 序列化由脚本负责。
+// Paths are relative to rootDir. The script handles JSON serialization.
 fs.writeText('settings.json', JSON.stringify({ language: 'zh-CN' }));
-// 最后一个表达式作为 EvalFile 的返回结果。
+// The final expression supplies the EvalFile result.
 JSON.parse(fs.readText('settings.json'));
 ```
 
-还支持 `appendText`、`exists`、`mkdir`、`readDir`、`remove` 和 `stat`。权限只能由宿主修改，JS 无法自行开启；关闭文件访问不会禁用 `EvalFile` 或模块加载。文件操作限制在 `rootDir` 内，文本文件上限为 16 MiB，不支持二进制读写或 Node.js 的 `fs` API。完整方法及错误约定见 [文件访问接口](docs/api.md#js-文件访问fs)；[demo](examples/demo.nsi) 演示了授权、文件执行和撤销。
+Other methods include `appendText`, `exists`, `mkdir`, `readDir`, `remove`, and `stat`. Only the host can change permissions; JavaScript cannot enable access itself. Disabling file access does not disable `EvalFile` or module loading. Operations are restricted to `rootDir`, with a 16 MiB text-file limit. Binary file I/O and the Node.js `fs` API are not supported. See the [file access reference](docs/api.md#javascript-file-access-fs) for methods and errors. The [demo](examples/demo.nsi) shows authorization, script execution, and permission revocation.
 
-## 构建和测试
+## Build and test
 
-需要 Visual Studio 2022 的 C++ 桌面开发组件、Windows SDK、CMake 3.24+ 和 Git。测试安装器工具链另需 Python 3.8+。
+Requirements: Visual Studio 2022 with the Desktop development with C++ workload, Windows SDK, CMake 3.24+, and Git. Building the installer test toolchain also requires Python 3.8+.
 
 ```powershell
 cmake --preset x86
@@ -121,13 +139,14 @@ cmake --install build/x86 --config Release --prefix dist/nsQuickJs
 cmake --install build/x64 --config Release --prefix dist/nsQuickJs
 ```
 
-以上命令在源码根目录执行。首次配置下载固定提交的 QuickJS-NG 源码包并验证 SHA-256。两个架构安装到同一目录，得到完整双架构包。
-详细说明见 [构建指南](docs/build.md) 和 [接口文档](docs/api.md)。
+Run these commands from the repository root. The initial configuration downloads a pinned QuickJS-NG source archive and verifies its SHA-256 checksum. Install both architectures into the same directory to produce a combined package.
 
-## 边界
+For details, see the [build guide](docs/build.md) and [API reference](docs/api.md).
 
-首版面向可信、短时的数据处理脚本。同步调用会阻塞安装器线程；不提供 Node.js、npm、网络、定时器、注册表或进程 API。文件访问需由宿主显式授权。
+## Limitations
 
-NSIS 栈参数通常只有 1024 个 UTF-16 单元的容量，包含末尾空字符。大脚本使用 `EvalFile`；结果超长返回 `E_RESULT_TOO_LONG`。不要将任意用户输入拼接进 `Eval`，应通过 `Call` 的 JSON 数组传参。
+This plugin is intended for trusted, short-running data-processing scripts. Synchronous calls block the installer thread. It does not provide Node.js, npm, networking, timers, registry access, or process APIs. File access requires explicit host authorization.
 
-路径限制不构成不可信代码的系统级隔离。文件操作期间不应由其他进程并发改动目录链接；授权目录内已有文件可被脚本覆盖或删除。JS 执行期限无法中断 Windows 的阻塞文件 I/O；脚本和数据应放在本地目录。
+NSIS stack strings typically hold up to 1024 UTF-16 code units, including the terminating null character. Use `EvalFile` for larger scripts; oversized results return `E_RESULT_TOO_LONG`. Pass user input through `Call` JSON argument arrays rather than concatenating it into `Eval` source code.
+
+Path restrictions are not an operating-system sandbox for untrusted code. Other processes must not change directory links during file operations. Scripts can overwrite or delete existing files inside the authorized directory. JavaScript execution deadlines cannot interrupt blocking Windows file I/O; keep scripts and data on local storage.

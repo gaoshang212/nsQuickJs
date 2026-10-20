@@ -1,0 +1,44 @@
+# 收集版本、架构和最小复现，便于定位插件及安装器问题。
+name: Bug report
+description: Report a reproducible problem with nsQuickJs.
+title: "[Bug]: "
+body:
+  - type: markdown
+    attributes:
+      value: |
+        For security vulnerabilities, follow SECURITY.md instead of posting details here.
+  - type: input
+    id: plugin-version
+    attributes:
+      label: Plugin version or commit
+      placeholder: "0.1.0 or a commit SHA"
+    validations:
+      required: true
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment
+      description: Include Windows build, NSIS version, installer target, and Debug/Release configuration.
+      placeholder: "Windows build 10.0.26300, NSIS 3.13, x86-unicode, Release"
+    validations:
+      required: true
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Minimal reproduction
+      description: Include the smallest .nsi and JavaScript snippets plus steps to reproduce. Remove private data and credentials.
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behavior
+      description: Include status codes, error messages, and relevant build or installer output.
+    validations:
+      required: true
